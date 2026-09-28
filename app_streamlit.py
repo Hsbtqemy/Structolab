@@ -175,7 +175,7 @@ with onglet_depot:
                 st.subheader("Aperçu")
                 c1, c2 = st.columns([3, 1])
                 choisi = c1.selectbox("Fichier", [r["nom"] for r in ok])
-                nb_lignes = c2.number_input("Lignes affichées", 10, 2000, 60, step=10)
+                nb_lignes = c2.number_input("Lignes affichées", 10, 2000, 100, step=10)
                 r = next(r for r in ok if r["nom"] == choisi)
                 extrait_o, total_o = lignes_debut(r["original"], nb_lignes)
                 extrait_s, total_s = lignes_debut(r["squelette"], nb_lignes)
