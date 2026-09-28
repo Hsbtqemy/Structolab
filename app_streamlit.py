@@ -16,7 +16,7 @@ import extraire_structure as moteur
 
 DOSSIER_APP = Path(__file__).resolve().parent
 
-st.set_page_config(page_title="Squelette XML", page_icon="🦴", layout="wide")
+st.set_page_config(page_title="Structolab - Squelette XML", page_icon="🦴", layout="wide")
 
 
 # --------------------------------------------------------------------------
@@ -104,7 +104,7 @@ with st.sidebar:
 # --------------------------------------------------------------------------
 # Page
 # --------------------------------------------------------------------------
-st.title("Squelette XML")
+st.title("Structolab - Squelette XML")
 st.write("Retire le texte d'un document XML et garde sa structure exacte.")
 
 onglet_depot, onglet_dossier = st.tabs(["Déposer des fichiers", "Traiter un dossier"])
