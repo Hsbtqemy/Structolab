@@ -1,0 +1,14 @@
+# Outils portables telecharges au premier lancement
+outils/
+python_portable/
+python-*-embed-*.zip
+
+# Donnees de travail
+depot/
+sortie/
+
+# Python / Jupyter
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
