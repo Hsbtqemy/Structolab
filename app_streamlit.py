@@ -23,10 +23,10 @@ st.set_page_config(page_title="Squelette XML", page_icon="🦴", layout="wide")
 # Traitement
 # --------------------------------------------------------------------------
 @st.cache_data(show_spinner=False, max_entries=500)
-def traiter(octets, mode, commentaires, vider_dans, chemins, nom):
+def traiter(octets, mode, commentaires, vider_dans, garder_dans, chemins, nom):
     """Renvoie (statut, detail, squelette, chemins_txt)."""
     try:
-        resultat = moteur.squelette_octets(octets, mode, commentaires, vider_dans)
+        resultat = moteur.squelette_octets(octets, mode, commentaires, vider_dans, garder_dans)
         txt = moteur.texte_chemins(moteur.ET.fromstring(octets), nom) if chemins else None
         return "OK", "", resultat, txt
     except moteur.ET.ParseError as e:
@@ -68,6 +68,13 @@ def taille(n):
 with st.sidebar:
     st.header("Options")
 
+    metadonnees = st.checkbox(
+        "Garder les métadonnées",
+        value=False,
+        help="Recopie le <teiHeader> tel quel, texte compris. "
+             "Les autres options ne s'appliquent pas à l'intérieur.")
+    garder_dans = frozenset({"teiHeader"}) if metadonnees else frozenset()
+
     choix_attr = st.radio(
         "Attributs",
         ["Garder les valeurs", "Effacer les valeurs", "Supprimer les attributs"],
@@ -89,7 +96,7 @@ with st.sidebar:
     chemins = st.checkbox("Ajouter la liste des chemins (.txt)", value=False)
 
     st.divider()
-    st.caption("Le texte est retiré ; balises, indentation, déclaration, DOCTYPE, "
+    st.caption("Le texte est retiré (sauf dans les métadonnées si elles sont gardées) ; balises, indentation, déclaration, DOCTYPE, "
                "fins de ligne et encodage restent ceux de l'original. Chaque squelette "
                "est relu et comparé à l'original avant d'être proposé.")
 
@@ -120,7 +127,7 @@ with onglet_depot:
             with st.spinner("Extraction en cours…"):
                 for nom, octets in documents:
                     statut, detail, sq, txt = traiter(
-                        octets, mode, commentaires, vider_dans, chemins, nom)
+                        octets, mode, commentaires, vider_dans, garder_dans, chemins, nom)
                     resultats.append(dict(nom=nom, original=octets, statut=statut,
                                           detail=detail, squelette=sq, chemins=txt))
 
@@ -208,7 +215,7 @@ with onglet_dossier:
                     barre.progress(i / len(liste), text=f"{i}/{len(liste)} · {relatif}")
                     try:
                         moteur.traiter_fichier(f, sortie_p / relatif, mode, commentaires,
-                                               chemins, vider_dans)
+                                               chemins, vider_dans, garder_dans)
                         bilan.append({"Fichier": str(relatif), "Statut": "✅ OK", "Détail": ""})
                     except moteur.ET.ParseError as e:
                         bilan.append({"Fichier": str(relatif), "Statut": "❌ Erreur",

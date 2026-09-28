@@ -54,8 +54,14 @@ python extraire_structure.py DOSSIER_ENTREE DOSSIER_SORTIE [options]
 | `--sans-attributs` | supprime les attributs (les déclarations `xmlns` sont toujours gardées) |
 | `--garder-commentaires` | conserve les `<!-- commentaires -->` (retirés par défaut, comme les sections CDATA) |
 | `--chemins` | ajoute `<nom>_chemins.txt` : liste des chemins avec leur nombre d'occurrences |
+| `--garder-metadonnees` | recopie le `<teiHeader>` tel quel, texte compris (voir ci-dessous) |
+| `--garder-dans A,B` | idem pour d'autres éléments |
 
 Le `.bat` est livré avec `--vider-dans profileDesc`.
+
+### Garder les métadonnées
+
+Avec `--garder-metadonnees` (case « Garder les métadonnées » dans l'interface), chaque `<teiHeader>` est recopié à l'identique : texte, valeurs d'attributs, commentaires et CDATA compris. Aucune autre option ne s'applique à l'intérieur ; un `--vider-dans profileDesc` est donc sans effet sur le `profileDesc` de l'en-tête. Le reste du document est traité normalement.
 
 ## Précisions
 

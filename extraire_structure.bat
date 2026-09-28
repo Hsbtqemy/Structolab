@@ -20,6 +20,7 @@ REM  --garder-commentaires  conserve les commentaires
 REM  --vider-attributs      garde les attributs, efface leurs valeurs
 REM  --sans-attributs       supprime les attributs
 REM  --chemins              ajoute la liste des chemins (.txt)
+REM  --garder-metadonnees   recopie le teiHeader tel quel, texte compris
 REM  --vider-dans A,B      efface les valeurs d'attributs dans les elements A, B
 REM                        et tout ce qu'ils contiennent
 set "OPTIONS=--vider-dans profileDesc"

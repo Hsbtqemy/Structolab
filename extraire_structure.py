@@ -30,6 +30,10 @@ Options :
                           ET de tout ce qu'ils contiennent, le reste etant garde
                           (noms separes par des virgules, ex. profileDesc,measure)
   --chemins               produit en plus <nom>_chemins.txt (liste des chemins)
+  --garder-metadonnees    recopie le <teiHeader> tel quel, texte compris
+  --garder-dans NOMS      idem pour d'autres elements (separes par des virgules)
+                          Ces zones sont recopiees a l'identique : aucune autre
+                          option (attributs, commentaires...) ne s'y applique.
 
 Uniquement la bibliotheque standard de Python (3.9+).
 """
@@ -95,15 +99,36 @@ def traiter_attributs(balise, mode):
     return ATTRIBUT.sub(remplacer, balise)
 
 
-def squelette(document, mode_attributs, garder_commentaires, vider_dans=frozenset()):
+def squelette(document, mode_attributs, garder_commentaires, vider_dans=frozenset(),
+              garder_dans=frozenset()):
     morceaux, pos = [], 0
-    pile = []  # True si l'element ouvert est dans une zone a vider
+    # pile des elements ouverts : (zone ou vider les attributs, zone recopiee telle quelle)
+    pile = []
     en_attente = None  # blanc precedant un commentaire/CDATA retire
     for m in JETON.finditer(document):
         if m.start() != pos:
             raise ValueError(f"caractere inattendu a la position {pos}")
         pos = m.end()
         genre, valeur = m.lastgroup, m.group()
+        intact = bool(pile) and pile[-1][1]
+
+        # Balise ouvrante d'une zone a garder : elle-meme est recopiee telle quelle
+        if genre == "balise" and not valeur.startswith("</") and not intact:
+            if nom_local(NOM_BALISE.match(valeur).group(1)) in garder_dans:
+                intact = None  # marque : ouverture d'une zone intacte
+
+        if intact:
+            # A l'interieur d'une zone intacte : tout est recopie tel quel
+            if en_attente is not None:
+                morceaux.append(en_attente)
+                en_attente = None
+            morceaux.append(valeur)
+            if genre == "balise":
+                if valeur.startswith("</"):
+                    pile.pop()
+                elif not valeur.endswith("/>"):
+                    pile.append((False, True))
+            continue
 
         if genre == "cdata" or (genre == "commentaire" and not garder_commentaires):
             # On met de cote le blanc qui precedait (retour a la ligne + indentation).
@@ -127,12 +152,17 @@ def squelette(document, mode_attributs, garder_commentaires, vider_dans=frozense
                 pile.pop()
                 morceaux.append(valeur)
                 continue
+            if intact is None:  # ouverture d'une zone a recopier telle quelle
+                morceaux.append(valeur)
+                if not valeur.endswith("/>"):
+                    pile.append((False, True))
+                continue
             nom = nom_local(NOM_BALISE.match(valeur).group(1))
-            dans_zone = (pile and pile[-1]) or nom in vider_dans
+            dans_zone = (pile and pile[-1][0]) or nom in vider_dans
             mode = "vider" if (dans_zone and mode_attributs == "garder") else mode_attributs
             morceaux.append(traiter_attributs(valeur, mode))
             if not valeur.endswith("/>"):
-                pile.append(bool(dans_zone))
+                pile.append((bool(dans_zone), False))
         else:  # declaration, instruction de traitement, DOCTYPE
             morceaux.append(valeur)
     if en_attente is not None:
@@ -165,34 +195,54 @@ def detecter_encodage(octets):
 # --------------------------------------------------------------------------
 # Controle : le squelette doit avoir exactement la structure de l'original
 # --------------------------------------------------------------------------
-def empreinte(racine, mode_attributs, vider_dans=frozenset()):
-    """Liste (balise, attributs attendus) de tous les elements, dans l'ordre."""
+def empreinte(racine, mode_attributs, vider_dans=frozenset(), garder_dans=frozenset()):
+    """Liste de tous les elements, dans l'ordre, avec ce qu'on attend d'eux dans
+    le squelette : attributs, et texte exact pour les zones gardees intactes."""
     resultat = []
 
-    def parcourir(e, dans_zone):
+    def parcourir(e, dans_zone, intact):
+        intact = intact or nom_local(e.tag) in garder_dans
         dans_zone = dans_zone or nom_local(e.tag) in vider_dans
-        mode = "vider" if (dans_zone and mode_attributs == "garder") else mode_attributs
+        mode = "garder" if intact else (
+            "vider" if (dans_zone and mode_attributs == "garder") else mode_attributs)
         if mode == "garder":
             attrs = dict(e.attrib)
         elif mode == "vider":
             attrs = {k: "" for k in e.attrib}
         else:
             attrs = None
-        resultat.append((e.tag, attrs))
+        texte = e.text if intact else None
+        resultat.append((e.tag, attrs, texte))
         for enfant in e:
-            parcourir(enfant, dans_zone)
+            parcourir(enfant, dans_zone, intact)
+            if intact:
+                resultat.append(("#suite", enfant.tail))
 
-    parcourir(racine, False)
+    parcourir(racine, False, False)
     return resultat
 
 
-def verifier(original, resultat, mode_attributs, vider_dans=frozenset()):
+def verifier(original, resultat, mode_attributs, vider_dans=frozenset(),
+             garder_dans=frozenset()):
     a = ET.fromstring(original)
     b = ET.fromstring(resultat)
-    if empreinte(a, mode_attributs, vider_dans) != empreinte(b, mode_attributs, vider_dans):
+    if (empreinte(a, mode_attributs, vider_dans, garder_dans)
+            != empreinte(b, mode_attributs, vider_dans, garder_dans)):
         raise ValueError("le squelette ne correspond pas a la structure d'origine")
-    reste = [e.tag for e in b.iter() if e.text and e.text.strip()
-             or e.tail and e.tail.strip()]
+
+    # En dehors des zones gardees, il ne doit rester aucun texte
+    reste = []
+
+    def parcourir(e, intact):
+        intact = intact or nom_local(e.tag) in garder_dans
+        if not intact and e.text and e.text.strip():
+            reste.append(e.tag)
+        for enfant in e:
+            if not intact and enfant.tail and enfant.tail.strip():
+                reste.append(e.tag)
+            parcourir(enfant, intact)
+
+    parcourir(b, False)
     if reste:
         raise ValueError(f"du texte subsiste dans : {reste[:5]}")
 
@@ -219,25 +269,27 @@ def texte_chemins(racine, nom_source):
 
 # --------------------------------------------------------------------------
 def squelette_octets(octets, mode_attributs="garder", garder_commentaires=False,
-                     vider_dans=frozenset()):
+                     vider_dans=frozenset(), garder_dans=frozenset()):
     """Octets d'un XML -> octets de son squelette (meme encodage), verifie."""
     ET.fromstring(octets)  # refuse d'emblee les XML mal formes
     encodage = detecter_encodage(octets)
     document = octets.decode(encodage)  # fins de ligne conservees telles quelles
 
-    resultat = squelette(document, mode_attributs, garder_commentaires, vider_dans)
+    resultat = squelette(document, mode_attributs, garder_commentaires, vider_dans,
+                         garder_dans)
     sortie_octets = resultat.encode(encodage)
     if encodage == "utf-8-sig" and not sortie_octets.startswith(codecs.BOM_UTF8):
         sortie_octets = codecs.BOM_UTF8 + sortie_octets
 
-    verifier(octets, sortie_octets, mode_attributs, vider_dans)
+    verifier(octets, sortie_octets, mode_attributs, vider_dans, garder_dans)
     return sortie_octets
 
 
 def traiter_fichier(source, destination, mode_attributs, garder_commentaires, chemins,
-                    vider_dans=frozenset()):
+                    vider_dans=frozenset(), garder_dans=frozenset()):
     octets = source.read_bytes()
-    sortie_octets = squelette_octets(octets, mode_attributs, garder_commentaires, vider_dans)
+    sortie_octets = squelette_octets(octets, mode_attributs, garder_commentaires, vider_dans,
+                                     garder_dans)
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_bytes(sortie_octets)
     if chemins:
@@ -257,10 +309,19 @@ def main():
     parser.add_argument("--vider-dans", default="",
                         help="elements (separes par des virgules) dont les valeurs "
                              "d'attributs sont effacees, descendants compris")
+    parser.add_argument("--garder-metadonnees", action="store_true",
+                        help="recopie le <teiHeader> tel quel, texte compris")
+    parser.add_argument("--garder-dans", default="",
+                        help="elements (separes par des virgules) recopies tels quels, "
+                             "texte compris")
     args = parser.parse_args()
 
     mode = "supprimer" if args.sans_attributs else "vider" if args.vider_attributs else "garder"
     vider_dans = frozenset(n.strip() for n in args.vider_dans.split(",") if n.strip())
+    garder_dans = {n.strip() for n in args.garder_dans.split(",") if n.strip()}
+    if args.garder_metadonnees:
+        garder_dans.add("teiHeader")
+    garder_dans = frozenset(garder_dans)
     entree, sortie = Path(args.entree).resolve(), Path(args.sortie).resolve()
 
     if not entree.is_dir():
@@ -278,7 +339,7 @@ def main():
         relatif = f.relative_to(entree)
         try:
             traiter_fichier(f, sortie / relatif, mode, args.garder_commentaires, args.chemins,
-                            vider_dans)
+                            vider_dans, garder_dans)
             ok += 1
             print(f"[OK]     {relatif}")
         except ET.ParseError as e:
